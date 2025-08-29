@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 
 export default function Home() {
+  //test
   const [isOnline, setIsOnline] = useState(false);
 
   useEffect(() => {
