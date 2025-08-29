@@ -2,7 +2,13 @@
 import { useEffect, useState } from 'react'
 
 export function StatusBadge() {
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<{
+    status: string
+    message: string
+    server: string
+    version: string
+    timestamp: string
+  } | null>(null)
   useEffect(() => {
     let active = true
     const load = async () => {
@@ -11,7 +17,7 @@ export function StatusBadge() {
         const json = await res.json()
         if (active) setData(json)
       } catch (e) {
-        if (active) setData({ status: 'offline' })
+        if (active) setData({ status: 'offline', message: '', server: '', version: '', timestamp: '' })
       }
     }
     load()
