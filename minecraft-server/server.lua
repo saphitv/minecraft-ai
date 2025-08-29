@@ -1,5 +1,12 @@
--- Chat Monitor Program for ComputerCraft with Advanced Peripherals
--- Listens for chat messages, displays them via chatbox, and syncs with external API
+-- Chat Monitor / AI Relay for ComputerCraft with Advanced Peripherals
+-- Responsibilities:
+--  * Listen to in-game chat events
+--  * Mirror to chatbox with formatting
+--  * Forward player messages to external AI HTTP endpoint via api_client
+--  * Display AI responses
+--  * Provide in-chat command interface for diagnostics & config
+--
+-- Refactored for clearer structure: constants, logging, command dispatch, separation of concerns.
 
 -- Local modules / APIs (ComputerCraft provides peripheral & http globals normally; keep require for environments that support it)
 ---@diagnostic disable: undefined-global
@@ -14,14 +21,47 @@ local http = http or (_G and _G.http) or
 ---@diagnostic enable: undefined-global
 local api = require("api_client")
 
-api.init() -- loads config / queue
+api.init() -- Initialize API module (config/queue)
+
+--------------------------------------------------
+-- Configuration
+--------------------------------------------------
+local CONFIG = {
+    commandPrefix = "!",         -- Prefix for local commands
+    aiPrefix = "AI",              -- Display username for AI replies
+    playerPrefix = "ChatBot",     -- Prefix text shown by chatbox for player echoes
+    brackets = "[]",              -- Brackets style for player echoes
+    bracketsAI = "<>",            -- Brackets style for AI messages
+    bracketColorPlayer = "&3",    -- Color code for brackets (player)
+    bracketColorAI = "&d",        -- Color code for brackets (AI)
+    chatRange = 100,              -- Chatbox broadcast range
+    statusFetchOnStart = true,    -- Pull status once at startup
+    flushIntervalSeconds = 30,    -- Attempt queue flush every N seconds
+    flushJitter = 5,              -- +/- jitter seconds added to flush scheduling
+    enableAI = true               -- Toggle AI forwarding
+}
+
+--------------------------------------------------
+-- Logging helpers
+--------------------------------------------------
+local function log(level, msg)
+    print(string.format("[%s] %s", level, msg))
+end
+
+local function logInfo(msg) log("INFO", msg) end
+local function logWarn(msg) log("WARN", msg) end
+local function logError(msg) log("ERROR", msg) end
+
+--------------------------------------------------
+-- Peripheral / utilities
+--------------------------------------------------
 
 -- Function to find and connect to a chatbox peripheral
 local function findChatbox()
-    local chatbox = peripheral.find("chat_box") -- Find the chat_box peripheral (on the latest update from chatBox became chat_box)
+    local chatbox = peripheral.find("chat_box") -- Updated identifier (formerly chatBox)
     if not chatbox then
-        print("No chatbox peripheral found!")
-        print("Make sure you have an Advanced Peripherals chatbox connected.")
+        logWarn("No chatbox peripheral found (Expected 'chat_box').")
+        logWarn("Ensure Advanced Peripherals chatbox is connected.")
         return nil
     end
     return chatbox
@@ -33,116 +73,160 @@ local function formatMessage(username, message, uuid, isHidden)
     return string.format("[%s%s] %s", username, hiddenIndicator, message)
 end
 
+--------------------------------------------------
+-- Chatbox sending
+--------------------------------------------------
+local function sendChatbox(chatbox, text, prefix, brackets, bracketColor, range)
+    if not chatbox or type(chatbox.sendMessage) ~= "function" then
+        return false, "chatbox unavailable"
+    end
+    return chatbox.sendMessage(text, prefix, brackets, bracketColor, range)
+end
+
 -- Function to get status from Next.js API
 local function getAPIStatus()
     local data, err = api.getStatus(true)
     if data then
         if data.message then
-            print("API Status: " .. data.message)
+            logInfo("API Status: " .. data.message)
         else
-            print("API Status received")
+            logInfo("API Status received")
         end
     else
-        print("Failed to get API status: " .. tostring(err))
+        logWarn("Failed to get API status: " .. tostring(err))
     end
     return data
 end
 
+--------------------------------------------------
+-- Command handlers
+--------------------------------------------------
+---@type table<string, {desc:string, handler:fun(args:string, ctx:table)}>
+local COMMANDS = {}
+
+local function register(cmd, desc, handler)
+    COMMANDS[cmd] = { desc = desc, handler = handler }
+end
+
+register("apistatus", "Fetch API status + flush queue", function(_, ctx)
+    getAPIStatus(); api.flushQueue()
+end)
+
+register("setapi", "Set base API URL: !setapi <url>", function(args, ctx)
+    local newUrl = args:match("%S+")
+    if newUrl then api.setBaseUrl(newUrl); logInfo("Base URL -> " .. newUrl) else logWarn("Usage: !setapi <url>") end
+end)
+
+register("flushapi", "Force flush queued requests", function(_, ctx)
+    api.flushQueue()
+end)
+
+register("reloadapi", "Reinitialize API module", function(_, ctx)
+    api.init({ force = true })
+    logInfo("API re-init requested (force flag).")
+end)
+
+register("help", "List commands", function(_, ctx)
+    logInfo("Available commands:")
+    for k, v in pairs(COMMANDS) do
+        print(string.format("  %s%s - %s", CONFIG.commandPrefix, k, v.desc))
+    end
+end)
+
+local function isCommand(message)
+    return message and message:sub(1, #CONFIG.commandPrefix) == CONFIG.commandPrefix
+end
+
+local function executeCommand(message, ctx)
+    local base = message:sub(#CONFIG.commandPrefix + 1)
+    local cmd, rest = base:match("^(%S+)%s*(.-)$")
+    if not cmd or cmd == '' then return false end
+    local entry = COMMANDS[cmd]
+    if not entry then
+        logWarn("Unknown command: " .. cmd)
+        return false
+    end
+    local ok, err = pcall(entry.handler, rest or '', ctx)
+    if not ok then logError("Command error: " .. tostring(err)) end
+    return true
+end
+
+--------------------------------------------------
+-- Message processing
+--------------------------------------------------
+local function handlePlayerMessage(chatbox, username, message, uuid, isHidden)
+    local formatted = formatMessage(username, message, uuid, isHidden)
+    print(formatted)
+
+    local success, err = sendChatbox(chatbox, formatted, CONFIG.playerPrefix, CONFIG.brackets, CONFIG.bracketColorPlayer, CONFIG.chatRange)
+    if not success then logWarn("Chatbox send failed: " .. tostring(err)) end
+
+    if CONFIG.enableAI then
+        local payload = {
+            username = username,
+            message = message,
+            uuid = uuid,
+            isHidden = isHidden,
+            timestamp = os.time(),
+            formattedMessage = formatted
+        }
+        local ok, aiRes = api.sendChat(payload)
+        if ok and aiRes and aiRes.aiMessage then
+            local aiFormatted = formatMessage(CONFIG.aiPrefix, aiRes.aiMessage, nil, false)
+            print(aiFormatted)
+            sendChatbox(chatbox, aiFormatted, CONFIG.aiPrefix, CONFIG.bracketsAI, CONFIG.bracketColorAI, CONFIG.chatRange)
+        elseif not ok then
+            logWarn("AI response queued (endpoint unreachable)")
+        end
+    end
+end
+
+--------------------------------------------------
+-- Main loop
+--------------------------------------------------
+
 -- Main program
 local function main()
-    print("Chat Monitor Program Starting...")
+    logInfo("Chat Monitor Program Starting...")
 
-    -- Check API status
-    print("Checking Next.js API status...")
-    local apiStatus = getAPIStatus()
-
-    -- Find chatbox peripheral
-    local chatbox = findChatbox()
-    if not chatbox then
-        return
+    if CONFIG.statusFetchOnStart then
+        logInfo("Checking API status...")
+        getAPIStatus()
     end
 
-    print("Chatbox found! Listening for chat messages...")
-    print("Press Ctrl+T to stop the program.")
+    local chatbox = findChatbox()
+    if not chatbox then return end
 
-    -- Main loop to listen for chat events
+    logInfo("Chatbox found. Listening for chat messages. Press Ctrl+T to stop.")
+
+    local nextFlushAt = os.epoch('utc') + (CONFIG.flushIntervalSeconds + math.random(-CONFIG.flushJitter, CONFIG.flushJitter)) * 1000
+
     while true do
-        -- Wait for a chat event (captures all 4 parameters: username, message, uuid, isHidden)
         local event, username, message, uuid, isHidden = os.pullEvent("chat")
+        if not message then goto continue end
 
-        -- Command handling (local commands start with !)
-        if message == "!apistatus" then
-            getAPIStatus()
-            api.flushQueue()
-        elseif message and message:sub(1, 9) == "!setapi " then
-            local newUrl = message:sub(10):gsub("%s+$", "")
-            if newUrl ~= '' then api.setBaseUrl(newUrl) end
-        elseif message == "!flushapi" then
-            api.flushQueue()
-        elseif message == "!reloadapi" then
-            api.init({ force = true })
-            print("[api] Reload attempted.")
+        if isCommand(message) then
+            executeCommand(message, { chatbox = chatbox })
+        elseif username then
+            handlePlayerMessage(chatbox, username, message, uuid, isHidden)
         end
 
-        -- Check if the message is from a player (not system/command messages)
-        if username and message then
-            -- Format the message with all available information
-            local formattedMessage = formatMessage(username, message, uuid, isHidden)
-
-            -- Print to computer console
-            print(formattedMessage)
-
-            -- Send to chatbox with enhanced formatting
-            -- Using custom prefix "ChatBot", brackets "[]", and bracket color
-            local success, errorMsg = chatbox.sendMessage(
-                formattedMessage, -- message
-                "ChatBot",        -- prefix
-                "[]",             -- brackets
-                "&3",             -- bracket color (cyan)
-                100               -- range (100 blocks)
-            )
-
-            -- Check if message was sent successfully
-            if not success then
-                print("Failed to send message: " .. errorMsg)
-            end
-
-            -- Send chat data to API (skip if it was an internal command beginning with '!')
-            if message:sub(1, 1) ~= '!' then
-                local chatData = {
-                    username = username,
-                    message = message,
-                    uuid = uuid,
-                    isHidden = isHidden,
-                    timestamp = os.time(),
-                    formattedMessage = formattedMessage
-                }
-                local ok, aiRes = api.sendChat(chatData)
-                if ok and aiRes and aiRes.aiMessage then
-                    local aiFormatted = formatMessage("AI", aiRes.aiMessage, nil, false)
-                    print(aiFormatted)
-                    if chatbox and chatbox.sendMessage then
-                        chatbox.sendMessage(aiFormatted, "AI", "<>", "&d", 100)
-                    end
-                elseif not ok then
-                    print("[api] AI response pending (queued)")
-                end
-            end
-
-            -- Periodically try to flush queued requests (non-blocking quick check)
-            if math.random() < 0.1 then
-                api.flushQueue()
-            end
+        local now = os.epoch('utc')
+        if now >= nextFlushAt then
+            api.flushQueue()
+            nextFlushAt = now + (CONFIG.flushIntervalSeconds + math.random(-CONFIG.flushJitter, CONFIG.flushJitter)) * 1000
         end
+
+        ::continue::
     end
 end
 
 -- Error handling wrapper
 local function safeMain()
-    local success, error = pcall(main)
-    if not success then
-        print("Error: " .. error)
-        print("Make sure Advanced Peripherals is installed and configured correctly.")
+    local ok, err = pcall(main)
+    if not ok then
+        logError(err)
+        logWarn("Ensure Advanced Peripherals & http API are enabled.")
     end
 end
 
