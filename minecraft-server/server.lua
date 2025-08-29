@@ -1,10 +1,14 @@
 -- Chat Monitor Program for ComputerCraft with Advanced Peripherals
--- This program listens for chat messages and displays them using a chatbox peripheral
--- Also communicates with a Next.js API server
+-- Listens for chat messages, displays them via chatbox, and syncs with external API
 
--- Load required APIs
-local peripheral = require("peripheral")
-local http = require("http")
+-- Local modules / APIs (ComputerCraft provides peripheral & http globals normally; keep require for environments that support it)
+---@diagnostic disable: undefined-global
+local peripheral = peripheral or (_G and _G.peripheral) or (function() local ok, mod = pcall(require, 'peripheral'); if ok then return mod end end) --[[@as any]]
+local http = http or (_G and _G.http) or (function() local ok, mod = pcall(require, 'http'); if ok then return mod end end) --[[@as any]]
+---@diagnostic enable: undefined-global
+local api = require("api_client")
+
+api.init() -- loads config / queue
 
 -- Function to find and connect to a chatbox peripheral
 local function findChatbox()
@@ -25,57 +29,22 @@ end
 
 -- Function to send chat data to Next.js API
 local function sendToAPI(chatData)
-    local apiUrl = "http://localhost:3000/api/chat-status" -- Adjust URL as needed
-
-    local success, response = pcall(function()
-        local handle = http.post(apiUrl, textutils.serialiseJSON(chatData), {
-            ["Content-Type"] = "application/json"
-        })
-
-        if handle then
-            local responseText = handle.readAll()
-            handle.close()
-            return responseText
-        else
-            return nil
-        end
-    end)
-
-    if success and response then
-        print("Successfully sent data to API")
-        return true
-    else
-        print("Failed to send data to API: " .. tostring(response))
-        return false
-    end
+    return api.sendChat(chatData)
 end
 
 -- Function to get status from Next.js API
 local function getAPIStatus()
-    local apiUrl = "http://localhost:3000/api/chat-status"
-
-    local success, response = pcall(function()
-        local handle = http.get(apiUrl)
-        if handle then
-            local responseText = handle.readAll()
-            handle.close()
-            return responseText
+    local data, err = api.getStatus(true)
+    if data then
+        if data.message then
+            print("API Status: " .. data.message)
         else
-            return nil
-        end
-    end)
-
-    if success and response then
-        local statusData = textutils.unserialiseJSON(response)
-        if statusData then
-            print("API Status: " .. statusData.message)
-            return statusData
+            print("API Status received")
         end
     else
-        print("Failed to get API status")
+        print("Failed to get API status: " .. tostring(err))
     end
-
-    return nil
+    return data
 end
 
 -- Main program
@@ -100,6 +69,20 @@ local function main()
         -- Wait for a chat event (captures all 4 parameters: username, message, uuid, isHidden)
         local event, username, message, uuid, isHidden = os.pullEvent("chat")
 
+        -- Command handling (local commands start with !)
+        if message == "!apistatus" then
+            getAPIStatus()
+            api.flushQueue()
+        elseif message and message:sub(1,9) == "!setapi " then
+            local newUrl = message:sub(10):gsub("%s+$", "")
+            if newUrl ~= '' then api.setBaseUrl(newUrl) end
+        elseif message == "!flushapi" then
+            api.flushQueue()
+        elseif message == "!reloadapi" then
+            api.init({ force = true })
+            print("[api] Reload attempted.")
+        end
+
         -- Check if the message is from a player (not system/command messages)
         if username and message then
             -- Format the message with all available information
@@ -123,16 +106,23 @@ local function main()
                 print("Failed to send message: " .. errorMsg)
             end
 
-            -- Send chat data to Next.js API
-            local chatData = {
-                username = username,
-                message = message,
-                uuid = uuid,
-                isHidden = isHidden,
-                timestamp = os.time(),
-                formattedMessage = formattedMessage
-            }
-            sendToAPI(chatData)
+            -- Send chat data to API (skip if it was an internal command beginning with '!')
+            if message:sub(1,1) ~= '!' then
+                local chatData = {
+                    username = username,
+                    message = message,
+                    uuid = uuid,
+                    isHidden = isHidden,
+                    timestamp = os.time(),
+                    formattedMessage = formattedMessage
+                }
+                sendToAPI(chatData)
+            end
+
+            -- Periodically try to flush queued requests (non-blocking quick check)
+            if math.random() < 0.1 then
+                api.flushQueue()
+            end
         end
     end
 end
