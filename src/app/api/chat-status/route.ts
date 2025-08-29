@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       message: "Chat data processed successfully",
       received: body
     })
-  } catch (_) {
+  } catch {
     return NextResponse.json({
       success: false,
       message: "Error processing chat data"
