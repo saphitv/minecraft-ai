@@ -3,8 +3,8 @@
 -- Also communicates with a Next.js API server
 
 -- Load required APIs
-peripheral = require("peripheral")
-http = require("http")
+local peripheral = require("peripheral")
+local http = require("http")
 
 -- Function to find and connect to a chatbox peripheral
 local function findChatbox()
@@ -25,7 +25,7 @@ end
 
 -- Function to send chat data to Next.js API
 local function sendToAPI(chatData)
-    local apiUrl = "http://localhost:3000/api/chat-status"  -- Adjust URL as needed
+    local apiUrl = "http://localhost:3000/api/chat-status" -- Adjust URL as needed
 
     local success, response = pcall(function()
         local handle = http.post(apiUrl, textutils.serialiseJSON(chatData), {
@@ -111,11 +111,11 @@ local function main()
             -- Send to chatbox with enhanced formatting
             -- Using custom prefix "ChatBot", brackets "[]", and bracket color
             local success, errorMsg = chatbox.sendMessage(
-                formattedMessage,     -- message
-                "ChatBot",            -- prefix
-                "[]",                 -- brackets
-                "&3",                 -- bracket color (cyan)
-                100                   -- range (100 blocks)
+                formattedMessage, -- message
+                "ChatBot",        -- prefix
+                "[]",             -- brackets
+                "&3",             -- bracket color (cyan)
+                100               -- range (100 blocks)
             )
 
             -- Check if message was sent successfully

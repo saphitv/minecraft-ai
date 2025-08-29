@@ -10,5 +10,8 @@
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit"
   },
-  "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+  "[lua]": {
+    "editor.defaultFormatter": "sumneko.lua"
+  }
 }
