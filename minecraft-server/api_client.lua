@@ -179,18 +179,19 @@ function M.getStatus(force)
 end
 
 function M.sendChat(chatData, silent)
-  local data, err = doRequest('POST', '/api/chat-status', chatData)
+  local data, err = doRequest('POST', '/api/ai-chat', chatData)
   if not data then
-    if not silent then print("[api] Failed to send chat: " .. tostring(err)) end
+    if not silent then print('[api] Failed to send chat to AI endpoint: ' .. tostring(err)) end
     if DEFAULTS.enableQueue then
       table.insert(state.queue, { ts = os.time(), payload = chatData })
       saveQueue()
-      if not silent then print("[api] Queued chat payload (will retry later). Queue size=" .. #state.queue) end
+      if not silent then print('[api] Queued chat payload (will retry later). Queue size=' .. #state.queue) end
     end
-    return false, err
+    return false, nil, err
   end
-  if not silent then print("[api] Chat sent OK") end
-  return true, data
+  if not silent then print('[api] Chat sent to AI endpoint OK') end
+  -- Expecting data.aiMessage; pass through entire object
+  return true, data, nil
 end
 
 -- Generic (if needed)

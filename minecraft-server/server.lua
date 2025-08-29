@@ -3,8 +3,14 @@
 
 -- Local modules / APIs (ComputerCraft provides peripheral & http globals normally; keep require for environments that support it)
 ---@diagnostic disable: undefined-global
-local peripheral = peripheral or (_G and _G.peripheral) or (function() local ok, mod = pcall(require, 'peripheral'); if ok then return mod end end) --[[@as any]]
-local http = http or (_G and _G.http) or (function() local ok, mod = pcall(require, 'http'); if ok then return mod end end) --[[@as any]]
+local peripheral = peripheral or (_G and _G.peripheral) or
+    (function()
+        local ok, mod = pcall(require, 'peripheral'); if ok then return mod end
+    end) --[[@as any]]
+local http = http or (_G and _G.http) or
+    (function()
+        local ok, mod = pcall(require, 'http'); if ok then return mod end
+    end) --[[@as any]]
 ---@diagnostic enable: undefined-global
 local api = require("api_client")
 
@@ -12,7 +18,7 @@ api.init() -- loads config / queue
 
 -- Function to find and connect to a chatbox peripheral
 local function findChatbox()
-    local chatbox = peripheral.find("chatBox")
+    local chatbox = peripheral.find("chat_box") -- Find the chat_box peripheral (on the latest update from chatBox became chat_box)
     if not chatbox then
         print("No chatbox peripheral found!")
         print("Make sure you have an Advanced Peripherals chatbox connected.")
@@ -25,11 +31,6 @@ end
 local function formatMessage(username, message, uuid, isHidden)
     local hiddenIndicator = isHidden and " [HIDDEN]" or ""
     return string.format("[%s%s] %s", username, hiddenIndicator, message)
-end
-
--- Function to send chat data to Next.js API
-local function sendToAPI(chatData)
-    return api.sendChat(chatData)
 end
 
 -- Function to get status from Next.js API
@@ -73,7 +74,7 @@ local function main()
         if message == "!apistatus" then
             getAPIStatus()
             api.flushQueue()
-        elseif message and message:sub(1,9) == "!setapi " then
+        elseif message and message:sub(1, 9) == "!setapi " then
             local newUrl = message:sub(10):gsub("%s+$", "")
             if newUrl ~= '' then api.setBaseUrl(newUrl) end
         elseif message == "!flushapi" then
@@ -107,7 +108,7 @@ local function main()
             end
 
             -- Send chat data to API (skip if it was an internal command beginning with '!')
-            if message:sub(1,1) ~= '!' then
+            if message:sub(1, 1) ~= '!' then
                 local chatData = {
                     username = username,
                     message = message,
@@ -116,7 +117,16 @@ local function main()
                     timestamp = os.time(),
                     formattedMessage = formattedMessage
                 }
-                sendToAPI(chatData)
+                local ok, aiRes = api.sendChat(chatData)
+                if ok and aiRes and aiRes.aiMessage then
+                    local aiFormatted = formatMessage("AI", aiRes.aiMessage, nil, false)
+                    print(aiFormatted)
+                    if chatbox and chatbox.sendMessage then
+                        chatbox.sendMessage(aiFormatted, "AI", "<>", "&d", 100)
+                    end
+                elseif not ok then
+                    print("[api] AI response pending (queued)")
+                end
             end
 
             -- Periodically try to flush queued requests (non-blocking quick check)
