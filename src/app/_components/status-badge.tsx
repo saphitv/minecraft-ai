@@ -16,7 +16,7 @@ export function StatusBadge() {
         const res = await fetch('/api/chat-status', { cache: 'no-store' })
         const json = await res.json()
         if (active) setData(json)
-      } catch (e) {
+      } catch {
         if (active) setData({ status: 'offline', message: '', server: '', version: '', timestamp: '' })
       }
     }
