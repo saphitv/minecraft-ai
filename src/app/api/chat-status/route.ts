@@ -12,23 +12,3 @@ export async function GET() {
 
   return NextResponse.json(response)
 }
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-
-    // Log the received data (you could store this in a database)
-    console.log('Chat data received:', body)
-
-    return NextResponse.json({
-      success: true,
-      message: "Chat data processed successfully",
-      received: body
-    })
-  } catch {
-    return NextResponse.json({
-      success: false,
-      message: "Error processing chat data"
-    }, { status: 400 })
-  }
-}
