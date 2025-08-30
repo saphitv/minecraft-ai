@@ -20,7 +20,10 @@ local DEFAULTS = {
     retryBackoff = 2,                           -- seconds (exponential)
     queueFile = "api_queue.json",               -- persisted unsent payloads
     enableQueue = true,
-    timeout = 5                                 -- (informational; ComputerCraft http has built-in timeouts)
+    timeout = 5,                                -- (informational; ComputerCraft http has built-in timeouts)
+    -- Placeholder secret key header (replace the value manually after deploy).
+    -- You can also override via config file by adding: { "secretKey": "YOUR_REAL_KEY" }
+    secretKey = "secret-key"
 }
 
 local state = {
@@ -114,8 +117,9 @@ local function doRequest(method, path, bodyTable)
     while attempt < DEFAULTS.maxRetries do
         attempt = attempt + 1
         local ok, res = pcall(function()
+            local headers = { ["Content-Type"] = "application/json", ["secret-key"] = DEFAULTS.secretKey }
             if method == 'GET' then
-                local h = http.get(fullUrl)
+                local h = http.get(fullUrl, headers)
                 if not h then return nil end
                 local txt = h.readAll(); h.close(); return txt
             else
