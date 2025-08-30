@@ -1,3 +1,4 @@
+import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { NextResponse } from 'next/server'
 
 interface IncomingChat {
@@ -27,6 +28,10 @@ interface AiChatResponse {
         timestamp?: number | string
     }
 }
+
+const openrouter = createOpenRouter({
+    apiKey: process.env.OPENROUTER_KEY,
+});
 
 // Simple stub AI endpoint.
 // Accepts POST with JSON: { username, message, uuid, timestamp, ... }
