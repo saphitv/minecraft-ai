@@ -69,7 +69,7 @@ local function main()
     logger.info("Chat Monitor Program Starting...")
 
     if CONFIG.statusFetchOnStart then
-    logger.info("Checking API status...")
+        logger.info("Checking API status...")
         getAPIStatus()
     end
 
@@ -78,7 +78,8 @@ local function main()
 
     logger.info("Chatbox found. Listening for chat messages. Press Ctrl+T to stop.")
 
-    local nextFlushAt = os.epoch('utc') + (CONFIG.flushIntervalSeconds + math.random(-CONFIG.flushJitter, CONFIG.flushJitter)) * 1000
+    local nextFlushAt = os.epoch('utc') +
+    (CONFIG.flushIntervalSeconds + math.random(-CONFIG.flushJitter, CONFIG.flushJitter)) * 1000
 
     while true do
         local event, username, message, uuid, isHidden = os.pullEvent("chat")
@@ -93,7 +94,8 @@ local function main()
         local now = os.epoch('utc')
         if now >= nextFlushAt then
             api.flushQueue()
-            nextFlushAt = now + (CONFIG.flushIntervalSeconds + math.random(-CONFIG.flushJitter, CONFIG.flushJitter)) * 1000
+            nextFlushAt = now +
+            (CONFIG.flushIntervalSeconds + math.random(-CONFIG.flushJitter, CONFIG.flushJitter)) * 1000
         end
 
         ::continue::

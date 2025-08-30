@@ -18,11 +18,8 @@ local function sendChatbox(chatbox, text, prefix, brackets, bracketColor, range)
     return chatbox.sendMessage(text, prefix, brackets, bracketColor, range)
 end
 
--- Translate ampersand color codes (&d, &7, &r, etc.) into Minecraft section sign codes (§d ...)
-local function colorize(text)
-    if not text then return text end
-    return (text:gsub("&([0-9a-fk-or])", "§%1"))
-end
+-- Section sign for Minecraft color codes built via byte to avoid encoding oddities
+local SEC = string.char(167) -- '§'
 
 function M.handle(chatbox, username, message, uuid, isHidden)
     -- Still log player message locally, but DO NOT echo it back into chat (avoid duplicate message)
@@ -44,12 +41,10 @@ function M.handle(chatbox, username, message, uuid, isHidden)
             -- Desired format: [playerPrefix] <AI>: response with colored <> and AI text
             local aiText = aiRes.aiMessage or ""
             local aiPrefix = CONFIG.aiPrefix or "AI"
-            local aiColor = CONFIG.bracketColorAI or "&d" -- color for <> and AI label
-            local colonColor = "&7"
-            local reset = "&r"
-
-            local coloredTagRaw = string.format("%s<%s>%s%s:%s ", aiColor, aiPrefix, reset, colonColor, reset)
-            local messageOut = colorize(coloredTagRaw) .. aiText
+            local aiColorCode = (CONFIG.bracketColorAI or "&d"):match('&?(%w)') or 'd'
+            local colonColorCode = '7'
+            -- Build: §d<AI>§7: <text>
+            local messageOut = string.format("%s%s<%s>%s%s: %s", SEC, aiColorCode, aiPrefix, SEC, colonColorCode, aiText)
 
             -- Console log stripped (no color codes) for readability
             print(string.format("[%s] <%s>: %s", CONFIG.playerPrefix, aiPrefix, aiText))
